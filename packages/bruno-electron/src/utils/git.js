@@ -3,7 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { exec } = require('child_process');
-const { parseRequest } = require('@usebruno/filestore');
+const { parseRequest, parseEnvironment } = require('@usebruno/filestore');
 
 let collectionPathToGitRootPathMap = new Map();
 
@@ -1492,6 +1492,20 @@ const getFileContentAtCommit = async (gitRootPath, commitHash, filePath) => {
   }
 };
 
+const isEnvironmentFilePath = (filePath) => {
+  if (!filePath) return false;
+  const normalized = String(filePath).replace(/\\/g, '/');
+  return /(^|\/)environments\/[^/]+\.(bru|yml)$/i.test(normalized);
+};
+
+const hasValidYmlItemType = (content) => {
+  if (!content || typeof content !== 'string') return false;
+  return (
+    /(?:^|\n)\s*info\s*:[\s\S]*?\n\s+type\s*:/m.test(content)
+    || /(?:^|\n)\s*type\s*:\s*(?:script|app)\b/m.test(content)
+  );
+};
+
 /**
  * Check if file supports visual diff
  * @param {string} filePath - Path to the file
@@ -1500,33 +1514,51 @@ const getFileContentAtCommit = async (gitRootPath, commitHash, filePath) => {
 const supportsVisualDiff = (filePath) => {
   if (!filePath) return false;
 
-  const fileName = filePath.split('/').pop();
-  const excludedFiles = ['folder.yml', 'folder.bru', 'opencollection.yml', 'collection.bru'];
+  const normalized = String(filePath).replace(/\\/g, '/');
+  const fileName = normalized.split('/').pop();
+  const excludedFiles = ['folder.yml', 'folder.bru', 'opencollection.yml', 'collection.bru', 'workspace.yml'];
   if (excludedFiles.includes(fileName)) {
     return false;
   }
 
-  return filePath.endsWith('.bru') || filePath.endsWith('.yml');
+  return normalized.endsWith('.bru') || normalized.endsWith('.yml');
 };
 
 /**
  * Parse content for visual diff viewer
- * Uses parseRequest to get consistent BrunoItem structure for both .bru and .yml files
+ * Uses parseRequest for request items and parseEnvironment for environment files
  * @param {string} content - Raw file content
  * @param {string} filePath - Path to the file
- * @returns {object|null} Parsed BrunoItem or null if parsing fails
+ * @returns {object|null} Parsed BrunoItem / BrunoEnvironment or null if parsing fails
  */
 const parseContentForVisualDiff = (content, filePath) => {
-  if (!content) return null;
+  if (!content || typeof content !== 'string' || !content.trim()) return null;
   try {
-    if (filePath?.endsWith('.bru')) {
+    const normalized = String(filePath || '').replace(/\\/g, '/');
+    const format = normalized.endsWith('.bru') ? 'bru' : normalized.endsWith('.yml') ? 'yml' : null;
+    if (!format) return null;
+
+    if (isEnvironmentFilePath(normalized)) {
+      const env = parseEnvironment(content, { format });
+      return env ? { __kind: 'environment', ...env } : null;
+    }
+
+    if (format === 'bru') {
+      if (!/(?:^|\n)\s*meta\s*\{/m.test(content)) {
+        return null;
+      }
       return parseRequest(content, { format: 'bru' });
-    } else if (filePath?.endsWith('.yml')) {
+    }
+
+    if (format === 'yml') {
+      if (!hasValidYmlItemType(content)) {
+        return null;
+      }
       return parseRequest(content, { format: 'yml' });
     }
+
     return null;
   } catch (err) {
-    console.error('Error parsing content for visual diff:', err);
     return null;
   }
 };

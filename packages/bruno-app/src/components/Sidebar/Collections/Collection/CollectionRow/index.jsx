@@ -22,7 +22,8 @@ import {
   IconBook,
   IconServer,
   IconFileArrowRight,
-  IconAppWindow
+  IconAppWindow,
+  IconBrandGit
 } from '@tabler/icons';
 import OpenAPISyncIcon from 'components/Icons/OpenAPISync';
 import { toggleCollection, collapseFullCollection, clearSidebarSelection } from 'providers/ReduxStore/slices/collections';
@@ -109,6 +110,17 @@ const CollectionRow = ({ collection, searchText, openBulkMenu, children, isColle
         uid: uuid(),
         collectionUid: collection.uid,
         type: 'openapi-sync'
+      })
+    );
+  };
+
+  const openGitTab = () => {
+    ensureCollectionIsMounted();
+    dispatch(
+      addTab({
+        uid: `${collection.uid}-git`,
+        collectionUid: collection.uid,
+        type: 'git'
       })
     );
   };
@@ -430,6 +442,12 @@ const CollectionRow = ({ collection, searchText, openBulkMenu, children, isColle
       onClick: () => {
         setShowCloneCollectionModalOpen(true);
       }
+    },
+    {
+      id: 'git',
+      leftSection: IconBrandGit,
+      label: 'Git Source Control',
+      onClick: openGitTab
     },
     {
       id: 'sync-openapi',

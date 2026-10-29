@@ -18,8 +18,13 @@ import {
   IconFileOff,
   IconCode,
   IconAppWindow,
-  IconTransform
+  IconTransform,
+  IconGitBranch,
+  IconBrandGit,
+  IconArrowUp,
+  IconArrowDown
 } from '@tabler/icons';
+import useCollectionGit from 'hooks/useCollectionGit';
 import IconSparkles from 'components/Icons/IconSparkles';
 import OpenAPISyncIcon from 'components/Icons/OpenAPISync';
 import { switchWorkspace, renameWorkspaceAction, exportWorkspaceAction, confirmWorkspaceCreation, cancelWorkspaceCreation } from 'providers/ReduxStore/slices/workspaces/actions';
@@ -89,7 +94,12 @@ const CollectionHeader = ({ collection, isScratchCollection }) => {
   const tabCountsByCollection = useSelector(selectTabCountsByCollection);
   const firstTabUidByCollection = useSelector(selectFirstTabUidByCollection);
 
-  const gitRootPath = collection?.git?.gitRootPath;
+  const {
+    gitState,
+    isSyncing: isGitSyncing,
+    pullRemote: handleGitHeaderPull,
+    pushRemote: handleGitHeaderPush
+  } = useCollectionGit(collection, { autoFetch: !isScratchCollection });
   const isMockServerEnabled = useBetaFeature(BETA_FEATURES.MOCK_SERVER);
   const mockServerInstances = useSelector((state) => getMockServerInstances(state, activeWorkspaceUid));
 
@@ -302,6 +312,34 @@ const CollectionHeader = ({ collection, isScratchCollection }) => {
     }));
   };
 
+  const viewGitTab = () => {
+    dispatch(addTab({
+      uid: `${collection.uid}-git`,
+      collectionUid: collection.uid,
+      type: 'git'
+    }));
+  };
+
+  const handleQuickPull = async (e) => {
+    e?.stopPropagation();
+    try {
+      await handleGitHeaderPull();
+      toast.success('Pulled latest changes from remote');
+    } catch (error) {
+      toast.error(error?.message || 'Failed to pull changes');
+    }
+  };
+
+  const handleQuickPush = async (e) => {
+    e?.stopPropagation();
+    try {
+      await handleGitHeaderPush();
+      toast.success('Pushed commits to remote');
+    } catch (error) {
+      toast.error(error?.message || 'Failed to push commits');
+    }
+  };
+
   const viewMockServer = () => {
     const existingInstance = mockServerInstances.find((instance) => (
       instance.sourceType === 'collection' && instance.collectionUid === collection.uid
@@ -325,6 +363,7 @@ const CollectionHeader = ({ collection, isScratchCollection }) => {
 
   // Build overflow menu items for the "..." dropdown
   const overflowMenuItems = [
+    { id: 'git', label: 'Git Source Control', leftSection: IconBrandGit, onClick: viewGitTab },
     { id: 'variables', label: 'Variables', leftSection: IconEye, onClick: viewVariables },
     // File mode is exposed via the Request/App/File view-mode toggle when the active
     // request has apps enabled; keep it in the overflow as a fallback everywhere else.
@@ -792,6 +831,80 @@ const CollectionHeader = ({ collection, isScratchCollection }) => {
                   </ActionIcon>
                 </ToolHint>
               )}
+              {/* Git Toolbar Group (Branch pill + Uncommitted count + Pull/Push with Ahead/Behind) */}
+              <div className="git-toolbar-group" data-testid="collection-header-git-toolbar">
+                <ToolHint
+                  text={gitState?.isGitRepo ? `Git (${gitState.currentGitBranch || 'main'}) — Open Git Tab` : 'Open Git Source Control'}
+                  toolhintId="GitHeaderBranchToolhintId"
+                  place="bottom"
+                >
+                  <button
+                    type="button"
+                    className="git-header-btn"
+                    onClick={viewGitTab}
+                    data-testid="collection-header-git-btn"
+                  >
+                    <IconGitBranch size={14} strokeWidth={1.5} />
+                    <span>{gitState?.isGitRepo ? (gitState.currentGitBranch || 'main') : 'Git'}</span>
+                    {gitState?.isGitRepo && (
+                      (gitState?.changedFiles?.staged?.length || 0)
+                      + (gitState?.changedFiles?.unstaged?.length || 0)
+                      + (gitState?.changedFiles?.conflicted?.length || 0)
+                    ) > 0 && (
+                      <span className="git-badge" data-testid="collection-header-git-changes-badge">
+                        {(gitState?.changedFiles?.staged?.length || 0)
+                          + (gitState?.changedFiles?.unstaged?.length || 0)
+                          + (gitState?.changedFiles?.conflicted?.length || 0)}
+                      </span>
+                    )}
+                  </button>
+                </ToolHint>
+
+                {gitState?.isGitRepo && (
+                  <>
+                    <ToolHint
+                      text={`Pull from remote${gitState?.aheadBehind?.behind ? ` (${gitState.aheadBehind.behind} behind)` : ''}`}
+                      toolhintId="GitHeaderPullToolhintId"
+                      place="bottom"
+                    >
+                      <button
+                        type="button"
+                        className="git-header-btn"
+                        onClick={handleQuickPull}
+                        disabled={isGitSyncing}
+                        aria-label="Git Pull"
+                        data-testid="collection-header-git-pull-btn"
+                      >
+                        <IconArrowDown size={13} strokeWidth={1.75} />
+                        {(gitState?.aheadBehind?.behind || 0) > 0 && (
+                          <span className="git-badge">{gitState.aheadBehind.behind}</span>
+                        )}
+                      </button>
+                    </ToolHint>
+
+                    <ToolHint
+                      text={`Push to remote${gitState?.aheadBehind?.ahead ? ` (${gitState.aheadBehind.ahead} ahead)` : ''}`}
+                      toolhintId="GitHeaderPushToolhintId"
+                      place="bottom"
+                    >
+                      <button
+                        type="button"
+                        className="git-header-btn"
+                        onClick={handleQuickPush}
+                        disabled={isGitSyncing}
+                        aria-label="Git Push"
+                        data-testid="collection-header-git-push-btn"
+                      >
+                        <IconArrowUp size={13} strokeWidth={1.75} />
+                        {(gitState?.aheadBehind?.ahead || 0) > 0 && (
+                          <span className="git-badge">{gitState.aheadBehind.ahead}</span>
+                        )}
+                      </button>
+                    </ToolHint>
+                  </>
+                )}
+              </div>
+
               {/* Runner - always visible */}
               <ToolHint text="Runner" toolhintId="RunnerToolhintId" place="bottom">
                 <ActionIcon onClick={handleRun} aria-label="Runner" size="sm" data-testid="runner">

@@ -279,6 +279,57 @@ const StyledWrapper = styled.div`
       border-bottom-right-radius: ${(props) => props.theme.border.radius.sm};
     }
   }
+
+  .git-toolbar-group {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid ${(props) => props.theme.input.border};
+    border-radius: ${(props) => props.theme.border.radius.base};
+    background: transparent;
+    overflow: hidden;
+
+    .git-header-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 24px;
+      padding: 0 7px;
+      border: none;
+      background: transparent;
+      color: ${(props) => props.theme.text};
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+
+      &:hover:not(:disabled) {
+        background: ${(props) => props.theme.sidebar.collection.item.hoverBg};
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      & + .git-header-btn {
+        border-left: 1px solid ${(props) => props.theme.input.border};
+      }
+    }
+
+    .git-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 15px;
+      height: 15px;
+      padding: 0 4px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      background: ${(props) => rgba(props.theme.primary.solid, 0.16)};
+      color: ${(props) => props.theme.primary.solid};
+    }
+  }
 `;
 
 export default StyledWrapper;
