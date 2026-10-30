@@ -42,7 +42,11 @@ const {
   handleListRemoteBranches,
   handleGetRepositoryInfo,
   handleGetWorkingFileDiff,
-  handleGetCommitFileDiff
+  handleGetCommitFileDiff,
+  assertSafeGitArg,
+  assertSafeCommitHash,
+  toRelativeFilePath,
+  toAbsoluteFilePaths
 } = require('./git');
 
 describe('getCollectionGitRemoteUrl', () => {
@@ -189,6 +193,60 @@ describe('handleGetWorkingFileDiff & handleGetCommitFileDiff', () => {
       commitHash: 'abc1234',
       rawDiff: '@@ -1 +1 @@\n-a\n+b',
       visualDiff: null
+    });
+  });
+
+  describe('Security: Git argument validation & path traversal prevention', () => {
+    it('blocks path traversal outside gitRootPath in toRelativeFilePath and toAbsoluteFilePaths', () => {
+      expect(() => toRelativeFilePath('/tmp/repo', '../../etc/passwd')).toThrow(
+        'File path must be inside the Git repository'
+      );
+      expect(() => toRelativeFilePath('/tmp/repo', '/etc/passwd')).toThrow(
+        'File path must be inside the Git repository'
+      );
+      expect(() => toRelativeFilePath('/tmp/repo', 'requests/valid.bru\0.txt')).toThrow(
+        'Invalid file path'
+      );
+      expect(() => toAbsoluteFilePaths('/tmp/repo', ['requests/ok.bru', '../../../etc/shadow'])).toThrow(
+        'File path must be inside the Git repository'
+      );
+    });
+
+    it('blocks Git option injection and control characters in assertSafeGitArg', () => {
+      expect(() => assertSafeGitArg('--upload-pack=touch /tmp/pwned', 'Branch name')).toThrow(
+        'Branch name is not valid'
+      );
+      expect(() => assertSafeGitArg('-oProxyCommand=evil', 'Remote name')).toThrow(
+        'Remote name is not valid'
+      );
+      expect(() => assertSafeGitArg('main\n--exec=evil', 'Branch name')).toThrow(
+        'Branch name contains invalid characters'
+      );
+      expect(assertSafeGitArg('feature/login-flow', 'Branch name')).toBe('feature/login-flow');
+    });
+
+    it('enforces hex SHA commit format in assertSafeCommitHash', () => {
+      expect(() => assertSafeCommitHash('--format=%H')).toThrow('Invalid commit hash');
+      expect(() => assertSafeCommitHash('abc1234; rm -rf /')).toThrow('Invalid commit hash');
+      expect(assertSafeCommitHash('27cf90f8a1b2c3d4')).toBe('27cf90f8a1b2c3d4');
+    });
+
+    it('rejects path traversal and option injection in handleGetWorkingFileDiff & handleGetCommitFileDiff', async () => {
+      await expect(
+        handleGetWorkingFileDiff({}, {
+          gitRootPath: '/tmp/repo',
+          filePath: '../../etc/passwd',
+          type: 'unstaged'
+        })
+      ).rejects.toThrow('File path must be inside the Git repository');
+
+      await expect(
+        handleGetCommitFileDiff({}, {
+          gitRootPath: '/tmp/repo',
+          commitHash: '--output=/tmp/pwn',
+          filePath: 'bruno.json'
+        })
+      ).rejects.toThrow('Invalid commit hash');
     });
   });
 });

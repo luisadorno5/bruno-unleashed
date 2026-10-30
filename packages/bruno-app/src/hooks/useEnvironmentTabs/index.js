@@ -34,9 +34,23 @@ const useEnvironmentTabs = ({ environment, draft, inheritedEnvironmentVariables 
       );
     };
 
+    const keyVaultMappingsCount = (environment?.externalSecrets?.variables || []).filter(
+      (v) => v && v.name && String(v.name).trim() !== ''
+    ).length;
+
+    const keyVaultIndicator = () => {
+      if (keyVaultMappingsCount === 0) return null;
+      return (
+        <sup className="env-tab-count font-medium" data-testid="env-keyvault-tab-count">
+          {keyVaultMappingsCount}
+        </sup>
+      );
+    };
+
     return [
       { key: 'variables', label: 'Variables', indicator: tabIndicator(false) },
-      { key: 'secrets', label: 'Secrets', indicator: tabIndicator(true) }
+      { key: 'secrets', label: 'Secrets', indicator: tabIndicator(true) },
+      { key: 'keyvault', label: 'Key Vault', indicator: keyVaultIndicator() }
     ];
   }, [draft, environment, inheritedEnvironmentVariables]);
 

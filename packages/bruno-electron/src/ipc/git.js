@@ -47,13 +47,56 @@ const resolveGitRoot = (collectionOrGitPath) => {
   return collectionOrGitPath;
 };
 
-const toAbsoluteFilePaths = (gitRootPath, files = []) =>
-  (Array.isArray(files) ? files : []).map((filePath) =>
-    path.isAbsolute(filePath) ? filePath : path.join(gitRootPath, filePath)
-  );
+const assertSafeGitArg = (value, label = 'Git argument') => {
+  const str = typeof value === 'string' ? value.trim() : '';
+  if (!str) {
+    throw new Error(`${label} is required`);
+  }
+  if (str.includes('\0') || /[\r\n]/.test(str)) {
+    throw new Error(`${label} contains invalid characters`);
+  }
+  if (str.startsWith('-')) {
+    throw new Error(`${label} is not valid`);
+  }
+  return str;
+};
 
-const toRelativeFilePath = (gitRootPath, filePath = '') =>
-  (path.isAbsolute(filePath) ? path.relative(gitRootPath, filePath) : filePath).replace(/\\/g, '/');
+const assertSafeCommitHash = (commitHash) => {
+  const str = typeof commitHash === 'string' ? commitHash.trim() : '';
+  if (!str || (!/^[a-fA-F0-9]{4,64}$/.test(str) && str !== 'HEAD')) {
+    throw new Error('Invalid commit hash');
+  }
+  return str;
+};
+
+const toRelativeFilePath = (gitRootPath, filePath = '') => {
+  const raw = String(filePath || '');
+  if (!raw || raw.includes('\0')) {
+    throw new Error('Invalid file path');
+  }
+  const resolvedRoot = path.resolve(gitRootPath);
+  const resolvedTarget = path.isAbsolute(raw)
+    ? path.resolve(raw)
+    : path.resolve(resolvedRoot, raw);
+
+  if (resolvedTarget !== resolvedRoot && !resolvedTarget.startsWith(resolvedRoot + path.sep)) {
+    throw new Error('File path must be inside the Git repository');
+  }
+
+  const rel = path.relative(resolvedRoot, resolvedTarget).replace(/\\/g, '/');
+  if (!rel || rel.startsWith('..') || rel.startsWith('-')) {
+    throw new Error('File path is not valid');
+  }
+  return rel;
+};
+
+const toAbsoluteFilePaths = (gitRootPath, files = []) => {
+  const resolvedRoot = path.resolve(gitRootPath);
+  return (Array.isArray(files) ? files : []).map((filePath) => {
+    const rel = toRelativeFilePath(resolvedRoot, filePath);
+    return path.join(resolvedRoot, rel);
+  });
+};
 
 const getCollectionGitRemoteUrl = async (collectionPath) => {
   try {
@@ -157,15 +200,16 @@ const handleGetCommitFileDiff = async (event, { gitRootPath: rawGitRoot, commitH
     throw new Error('gitRootPath, commitHash, and filePath are required');
   }
 
+  const safeCommit = assertSafeCommitHash(commitHash);
   const relPath = toRelativeFilePath(gitRootPath, filePath);
   const [rawDiff, visualDiff] = await Promise.all([
-    getCommitFileDiff(gitRootPath, commitHash, relPath).catch(() => ''),
-    getFileContentForVisualDiff(gitRootPath, commitHash, relPath).catch(() => null)
+    getCommitFileDiff(gitRootPath, safeCommit, relPath).catch(() => ''),
+    getFileContentForVisualDiff(gitRootPath, safeCommit, relPath).catch(() => null)
   ]);
 
   return {
     filePath: relPath,
-    commitHash,
+    commitHash: safeCommit,
     rawDiff: rawDiff || '',
     visualDiff
   };
@@ -243,10 +287,12 @@ const registerGitIpc = (mainWindow) => {
     if (!gitRootPath || !branchName) {
       throw new Error('Git repository path and branch name are required');
     }
+    const safeBranch = assertSafeGitArg(branchName, 'Branch name');
+    const safeRemote = assertSafeGitArg(remoteName, 'Remote name');
     if (isRemote) {
-      await checkoutRemoteGitBranch(mainWindow, { gitRootPath, remoteName, branchName, processUid });
+      await checkoutRemoteGitBranch(mainWindow, { gitRootPath, remoteName: safeRemote, branchName: safeBranch, processUid });
     } else {
-      await checkoutGitBranch(mainWindow, { gitRootPath, branchName, processUid, shouldCreate });
+      await checkoutGitBranch(mainWindow, { gitRootPath, branchName: safeBranch, processUid, shouldCreate: Boolean(shouldCreate) });
     }
     return handleGetRepositoryInfo(event, { collectionPath: gitRootPath });
   });
@@ -254,18 +300,21 @@ const registerGitIpc = (mainWindow) => {
   ipcMain.handle('renderer:git-fetch', async (event, { gitRootPath: rawGitRoot, remote = 'origin' }) => {
     const gitRootPath = resolveGitRoot(rawGitRoot) || rawGitRoot;
     if (!gitRootPath) throw new Error('Git repository path is required');
-    await fetchChanges(gitRootPath, remote);
+    const safeRemote = assertSafeGitArg(remote, 'Remote name');
+    await fetchChanges(gitRootPath, safeRemote);
     return handleGetRepositoryInfo(event, { collectionPath: gitRootPath });
   });
 
   ipcMain.handle('renderer:git-pull', async (event, { gitRootPath: rawGitRoot, remote = 'origin', remoteBranch, strategy = '--no-rebase', processUid }) => {
     const gitRootPath = resolveGitRoot(rawGitRoot) || rawGitRoot;
     if (!gitRootPath) throw new Error('Git repository path is required');
+    const safeRemote = assertSafeGitArg(remote, 'Remote name');
+    const safeBranch = remoteBranch ? assertSafeGitArg(remoteBranch, 'Branch name') : undefined;
     await pullGitChanges(mainWindow, {
       gitRootPath,
       processUid,
-      remote,
-      remoteBranch,
+      remote: safeRemote,
+      remoteBranch: safeBranch,
       strategy
     });
     return handleGetRepositoryInfo(event, { collectionPath: gitRootPath });
@@ -274,11 +323,13 @@ const registerGitIpc = (mainWindow) => {
   ipcMain.handle('renderer:git-push', async (event, { gitRootPath: rawGitRoot, remote = 'origin', remoteBranch, processUid }) => {
     const gitRootPath = resolveGitRoot(rawGitRoot) || rawGitRoot;
     if (!gitRootPath) throw new Error('Git repository path is required');
+    const safeRemote = assertSafeGitArg(remote, 'Remote name');
+    const safeBranch = remoteBranch ? assertSafeGitArg(remoteBranch, 'Branch name') : undefined;
     await pushGitChanges(mainWindow, {
       gitRootPath,
       processUid,
-      remote,
-      remoteBranch
+      remote: safeRemote,
+      remoteBranch: safeBranch
     });
     return handleGetRepositoryInfo(event, { collectionPath: gitRootPath });
   });
@@ -292,7 +343,8 @@ const registerGitIpc = (mainWindow) => {
   ipcMain.handle('renderer:git-get-commit-files', async (event, { gitRootPath: rawGitRoot, commitHash }) => {
     const gitRootPath = resolveGitRoot(rawGitRoot) || rawGitRoot;
     if (!gitRootPath || !commitHash) return [];
-    return getCommitFiles(gitRootPath, commitHash);
+    const safeCommit = assertSafeCommitHash(commitHash);
+    return getCommitFiles(gitRootPath, safeCommit);
   });
 
   ipcMain.handle('renderer:git-get-commit-file-diff', handleGetCommitFileDiff);
@@ -300,7 +352,8 @@ const registerGitIpc = (mainWindow) => {
   ipcMain.handle('renderer:git-fetch-remote-branches', async (event, { gitRootPath: rawGitRoot, remote = 'origin' }) => {
     const gitRootPath = resolveGitRoot(rawGitRoot) || rawGitRoot;
     if (!gitRootPath) return [];
-    return fetchRemoteBranches({ gitRootPath, remote });
+    const safeRemote = assertSafeGitArg(remote, 'Remote name');
+    return fetchRemoteBranches({ gitRootPath, remote: safeRemote });
   });
 
   ipcMain.handle('renderer:git-add-remote', async (event, { gitRootPath: rawGitRoot, remoteName, remoteUrl }) => {
@@ -308,7 +361,9 @@ const registerGitIpc = (mainWindow) => {
     if (!gitRootPath || !remoteName || !remoteUrl) {
       throw new Error('gitRootPath, remoteName, and remoteUrl are required');
     }
-    return addRemote({ gitRootPath, remoteName: remoteName.trim(), remoteUrl: remoteUrl.trim() });
+    const safeRemoteName = assertSafeGitArg(remoteName, 'Remote name');
+    const safeRemoteUrl = assertSafeGitArg(remoteUrl, 'Remote URL');
+    return addRemote({ gitRootPath, remoteName: safeRemoteName, remoteUrl: safeRemoteUrl });
   });
 
   ipcMain.handle('renderer:git-remove-remote', async (event, { gitRootPath: rawGitRoot, remoteName }) => {
@@ -316,7 +371,8 @@ const registerGitIpc = (mainWindow) => {
     if (!gitRootPath || !remoteName) {
       throw new Error('gitRootPath and remoteName are required');
     }
-    return removeRemote({ gitRootPath, remoteName: remoteName.trim() });
+    const safeRemoteName = assertSafeGitArg(remoteName, 'Remote name');
+    return removeRemote({ gitRootPath, remoteName: safeRemoteName });
   });
 
   ipcMain.handle('renderer:git-list-stashes', async (event, { gitRootPath: rawGitRoot }) => {
@@ -353,3 +409,7 @@ module.exports.handleListRemoteBranches = handleListRemoteBranches;
 module.exports.handleGetRepositoryInfo = handleGetRepositoryInfo;
 module.exports.handleGetWorkingFileDiff = handleGetWorkingFileDiff;
 module.exports.handleGetCommitFileDiff = handleGetCommitFileDiff;
+module.exports.assertSafeGitArg = assertSafeGitArg;
+module.exports.assertSafeCommitHash = assertSafeCommitHash;
+module.exports.toRelativeFilePath = toRelativeFilePath;
+module.exports.toAbsoluteFilePaths = toAbsoluteFilePaths;

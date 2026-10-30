@@ -77,6 +77,7 @@ const { transientManager } = require('../services/transient');
 const interpolateVars = require('./network/interpolate-vars');
 const { interpolateString } = require('./network/interpolate-string');
 const { getEnvVars, getTreePathFromCollectionToItem, mergeVars, parseBruFileMeta, hydrateRequestWithUuid, transformRequestToSaveToFilesystem } = require('../utils/collection');
+const { hydrateEnvVarsWithKeyVault } = require('../utils/keyvault');
 const { getProcessEnvVars } = require('../store/process-env');
 const { setBrunoConfig } = require('../store/bruno-config');
 const { getOAuth2TokenUsingAuthorizationCode, getOAuth2TokenUsingClientCredentials, getOAuth2TokenUsingPasswordCredentials, getOAuth2TokenUsingImplicitGrant, refreshOauth2Token } = require('../utils/oauth2');
@@ -2051,7 +2052,11 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
           environments,
           targetEnvironment: _.find(environments, (e) => e.uid === activeEnvironmentUid)
         });
-        const envVars = getEnvVars(environment);
+        const envVars = await hydrateEnvVarsWithKeyVault({
+          collectionPathname: collectionPath,
+          environment,
+          envVars: getEnvVars(environment)
+        });
         const processEnvVars = getProcessEnvVars(collectionUid);
         const partialItem = { uid: itemUid };
         const requestTreePath = getTreePathFromCollectionToItem(collection, partialItem);
@@ -2185,7 +2190,11 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
           environments,
           targetEnvironment: _.find(environments, (e) => e.uid === activeEnvironmentUid)
         });
-        const envVars = getEnvVars(environment);
+        const envVars = await hydrateEnvVarsWithKeyVault({
+          collectionPathname: collectionPath,
+          environment,
+          envVars: getEnvVars(environment)
+        });
         const processEnvVars = getProcessEnvVars(collectionUid);
         const partialItem = { uid: itemUid };
         const requestTreePath = getTreePathFromCollectionToItem(collection, partialItem);

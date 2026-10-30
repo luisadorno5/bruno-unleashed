@@ -502,6 +502,25 @@ export const collectionsSlice = createSlice({
         }
       }
     },
+    saveEnvironmentExternalSecrets: (state, action) => {
+      const { environmentUid, collectionUid, externalSecrets, variables } = action.payload;
+      const collection = findCollectionByUid(state.collections, collectionUid);
+
+      if (collection) {
+        const environment = findEnvironmentInCollection(collection, environmentUid);
+
+        if (environment) {
+          if (externalSecrets && externalSecrets.variables?.length) {
+            environment.externalSecrets = externalSecrets;
+          } else {
+            delete environment.externalSecrets;
+          }
+          if (Array.isArray(variables)) {
+            environment.variables = variables;
+          }
+        }
+      }
+    },
     newItem: (state, action) => {
       const collection = findCollectionByUid(state.collections, action.payload.collectionUid);
 
@@ -4344,6 +4363,7 @@ export const {
   applyDefaultEnvironment,
   updateEnvironmentColor,
   saveEnvironmentExtends,
+  saveEnvironmentExternalSecrets,
   newItem,
   deleteItem,
   renameItem,

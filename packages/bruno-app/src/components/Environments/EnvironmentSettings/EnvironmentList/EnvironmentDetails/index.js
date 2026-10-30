@@ -7,6 +7,7 @@ import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import CopyEnvironment from 'components/Environments/EnvironmentSettings/CopyEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
+import EnvironmentKeyVault from './EnvironmentKeyVault';
 import InheritsFrom from 'components/Environments/Common/InheritsFrom';
 import EnvironmentInheritanceWarning from 'components/Environments/Common/EnvironmentInheritanceWarning';
 import ColorPicker from 'components/ColorPicker';
@@ -318,14 +319,22 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
       </div>
 
       <div className="content">
-        <EnvironmentVariables
-          environment={environment}
-          setIsModified={setIsModified}
-          collection={collection}
-          inheritedEnvironmentVariables={inheritedEnvironmentVariablesForActiveTab}
-          searchQuery={tableSearchQuery}
-          variableType={activeTab}
-        />
+        {activeTab === 'keyvault' ? (
+          <EnvironmentKeyVault
+            environment={environment}
+            collection={collection}
+            searchQuery={tableSearchQuery}
+          />
+        ) : (
+          <EnvironmentVariables
+            environment={environment}
+            setIsModified={setIsModified}
+            collection={collection}
+            inheritedEnvironmentVariables={inheritedEnvironmentVariablesForActiveTab}
+            searchQuery={tableSearchQuery}
+            variableType={activeTab}
+          />
+        )}
       </div>
     </StyledWrapper>
   );
